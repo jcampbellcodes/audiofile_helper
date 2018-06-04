@@ -10,8 +10,10 @@
 
 enum Channels
 {
+    None = 0,
     Mono = 1,
-    Sterep = 2
+    Stereo = 2,
+    Max = 16
 };
 
 enum af_result

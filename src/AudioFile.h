@@ -3,39 +3,188 @@
 #include <vector>
 #include <chrono>
 #include <assert.h>
-
+#include <stdio.h>
 #include "af_helpers.h"
 
+#define bigendian 1
 
-// a handle to an audio file
+#ifdef lilendian
+#define fourccRIFF 'RIFF'
+#define fourccDATA 'data'
+#define fourccFMT 'fmt '
+#define fourccWAVE 'WAVE'
+#endif
+
+
+#ifdef bigendian
+#define fourccRIFF 'FFIR'
+#define fourccDATA 'atad'
+#define fourccFMT ' tmf'
+#define fourccWAVE 'EVAW'
+#endif
+
+
+/*
+ 
+ The canonical WAVE format starts with the RIFF header:
+ 
+ 0         4   ChunkID          Contains the letters "RIFF" in ASCII form
+ (0x52494646 big-endian form).
+ 
+ 4         4   ChunkSize        36 + SubChunk2Size, or more precisely:
+ 4 + (8 + SubChunk1Size) + (8 + SubChunk2Size)
+ This is the size of the rest of the chunk
+ following this number.  This is the size of the
+ entire file in bytes minus 8 bytes for the
+ two fields not included in this count:
+ ChunkID and ChunkSize.
+ 
+ 8         4   Format           Contains the letters "WAVE"
+ (0x57415645 big-endian form).
+ 
+ 
+ 
+ The "WAVE" format consists of two subchunks: "fmt " and "data":
+ The "fmt " subchunk describes the sound data's format:
+ 
+ 12        4   Subchunk1ID      Contains the letters "fmt "
+ (0x666d7420 big-endian form).
+ 
+ 16        4   Subchunk1Size    16 for PCM.  This is the size of the
+ rest of the Subchunk which follows this number.
+ 
+ 20        2   AudioFormat      PCM = 1 (i.e. Linear quantization)
+ Values other than 1 indicate some
+ form of compression.
+ 
+ 22        2   NumChannels      Mono = 1, Stereo = 2, etc.
+ 
+ 24        4   SampleRate       8000, 44100, etc.
+ 
+ 28        4   ByteRate         == SampleRate * NumChannels * BitsPerSample/8
+ 
+ 32        2   BlockAlign       == NumChannels * BitsPerSample/8
+ The number of bytes for one sample including
+ all channels. I wonder what happens when
+ this number isn't an integer?
+ 
+ 34        2   BitsPerSample    8 bits = 8, 16 bits = 16, etc.
+ 
+ The "data" subchunk contains the size of the data and the actual sound:
+ 
+ 36        4   Subchunk2ID      Contains the letters "data"
+ (0x64617461 big-endian form).
+ 
+ 40        4   Subchunk2Size    == NumSamples * NumChannels * BitsPerSample/8
+ This is the number of bytes in the data.
+ You can also think of this as the size
+ of the read of the subchunk following this
+ number.
+ 
+ 44        *   Data             The actual sound data.
+ 
+ 
+ */
+
+/// A handle to an audio file (WAV only)
 template <typename SampleType>
 class AudioFile
 {
 public:
     // io operations
-    static AudioFile<SampleType>& load(const char* path, af_sync_option async = af_sync_option::sync)
+    static af_result load(const char* path, AudioFile<SampleType>& outFile, af_sync_option async = af_sync_option::sync)
     {
-        /* handle all nasty wav parsing from a file path here */
-    }
-    
-    static af_result unload(AudioFile<SampleType>& af)
-    {
-        /* if saved in memory, free it */
+        // Doing it the C way
+        // open file
+        uint32_t * buffer = nullptr;
+        FILE* pF = fopen(path, "rb");
+        if(!pF){ return af_result::failure; }
+        
+        // get file size
+        size_t sz;
+        fseek(pF, 0, SEEK_END);
+        sz = ftell(pF);
+        rewind(pF);
+        buffer = new uint32_t[sz];
+        assert(buffer);
+        size_t result = fread(buffer, 1, sz, pF);
+        if(result != sz) { return af_result::failure; }
+        
+        // now that we have it in the buffer, close the file
+        fclose(pF);
+        
+        uint32_t* wav_iter = buffer;
+        // Time to parse the wave
+        // chunkid, 4 bytes, big "RIFF"
+        assert(*wav_iter == fourccRIFF);
+        wav_iter++;
+        // chunk size, 4 bytes, little
+        size_t chunksz = *wav_iter;
+        wav_iter++;
+        // format, 4 bytes, big, "WAVE"
+        assert(*wav_iter == fourccWAVE);
+        wav_iter++;
+        // fmt subchunk id, 4 bytes, big, "fmt "
+        assert(*wav_iter == fourccFMT);
+        wav_iter++;
+        // fmt subchunk size , 4 bytes, little. 16 for PCM
+        assert(*wav_iter == 16); // Only support PCM wave data for now.
+        wav_iter++;
+        // fmt fmt, 2 bytes, little. PCM = 1
+        uint16_t* frmatAndNumChans = (uint16_t *)&wav_iter[0];
+        assert(*frmatAndNumChans == 1); // only support PCM
+        frmatAndNumChans++;
+        // fmt num channels, 2 bytes, little
+        uint16_t numChans = *frmatAndNumChans; // set num channels
+        outFile.mChannelConfig = static_cast<Channels>(numChans);
+        wav_iter++;
+        // fmt sample rate, 4 bytes, little
+        outFile.mSampleRate = *wav_iter;
+        wav_iter++;
+        // fmt byterate, 4 bytes, little
+        wav_iter++;
+        // fmt blockalign, 2 bytes, little --> we may start caring about this
+        uint16_t blockAlign = *(uint16_t *)&wav_iter[0];
+        // fmt bits per sample, 2 bytes, little
+        outFile.mBitsPerSample = *(((uint16_t *)&wav_iter[0]) + 1);
+        wav_iter++;
+        // data subchunk, 4 bytes, big, little, "data"
+        assert(*wav_iter == fourccDATA);
+        wav_iter++;
+        // data subchunk size, 4 bytes, little
+        uint32_t audioDataSz = *wav_iter;
+        wav_iter++;
+        // audio data (deep copy to internal vector), subchunk sz bytes, little?
+        outFile.mAudioData.resize(audioDataSz);
+        memcpy(&outFile.mAudioData[0], wav_iter, audioDataSz);
+        // clean up
+        delete[] buffer;
+        return af_result::success;
     }
     
     static af_result saveToDisk(AudioFile<SampleType>& af, const char* filename)
     {
         /* get audio data and create a new wave on the disk at the specified location */
+        
+        // first, write all the metadata into a char buffer
+        // then add audio data at the end
+        
+        // then do file ops and write to disk
     }
     
     // big four
-    AudioFile() {};
+    AudioFile() :
+    mAudioData(),
+    mChannelConfig(Channels::None),
+    mSampleRate(-1)
+    {};
+    
     AudioFile(const AudioFile&) = default;
     AudioFile& operator= (const AudioFile&) = default;
     ~AudioFile() = default;
     
     // accessors
-    float** getAudioData() const
+    SampleType** getAudioData() const
     {
         return &mAudioData[0];
     }
@@ -82,8 +231,9 @@ public:
     
 private:
     //
-    std::vector<char> mAudioData;
+    std::vector<uint8_t> mAudioData;
     Channels mChannelConfig;
     int32_t mSampleRate;
+    uint16_t mBitsPerSample;
 };
 #endif

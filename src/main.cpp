@@ -9,8 +9,9 @@ int main()
     
     // load a wave
     // assert all of the properties of the wave
-    
-    
+    AudioFile<float> aud;
+    auto res = AudioFile<float>::load("/Users/jcampbell/git/audiofile/resources/drums.wav", aud);
+    assert(res == af_result::success);
     // save that wave back to disk under a new name
     
     
