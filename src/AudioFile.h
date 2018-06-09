@@ -142,9 +142,11 @@ public:
         outFile.mSampleRate = *wav_iter;
         wav_iter++;
         // fmt byterate, 4 bytes, little
+		outFile.mByteRate = *wav_iter;
         wav_iter++;
         // fmt blockalign, 2 bytes, little --> we may start caring about this
         uint16_t blockAlign = *(uint16_t *)&wav_iter[0];
+		outFile.mBlockAlign = blockAlign;
         // fmt bits per sample, 2 bytes, little
         outFile.mBitsPerSample = *(((uint16_t *)&wav_iter[0]) + 1);
         wav_iter++;
@@ -169,7 +171,49 @@ public:
         // first, write all the metadata into a char buffer
         // then add audio data at the end
         
+		// how much space do we need???? eh???
+		const size_t sz = af.getAudioSize() + 40; // size of wave header
+		std::vector<uint8_t> outBuf(sz);
+
+		// Time to parse the wave
+		// chunkid, 4 bytes, big "RIFF"
+		outBuf.push_back(fourccRIFF);
+		// chunk size, 4 bytes, little
+		size_t chunksz = sz - 4; // size of file minus "RIFF literal"
+		outBuf.push_back(chunksz);
+		// format, 4 bytes, big, "WAVE"
+		outBuf.push_back(fourccWAVE);
+		// fmt subchunk id, 4 bytes, big, "fmt "
+		outBuf.push_back(fourccFMT);
+		// fmt subchunk size , 4 bytes, little. 16 for PCM
+		outBuf.push_back(16);
+		// fmt fmt, 2 bytes, little. PCM = 1, 2 bytes for channel config
+		outBuf.push_back((1 /*PCM*/) & static_cast<uint16_t>(af.getChannelConfig()));
+		// fmt sample rate, 4 bytes, little
+		outBuf.push_back(af.getSampleRate());
+		// fmt byterate, 4 bytes, little
+		outBuf.push_back(af.mByteRate);
+		// fmt blockalign, 2 bytes, little --> we may start caring about this
+		// fmt bits per sample, 2 bytes, little
+		outBuf.push_back(af.mBlockAlign & af.mBitsPerSample);
+		// data subchunk, 4 bytes, big, little, "data"
+		outBuf.push_back(fourccDATA);
+		// data subchunk size, 4 bytes, little
+		outBuf.push_back(af.getAudioSize());
+		// audio data (deep copy to internal vector), subchunk sz bytes, little?
+		memcpy(&outBuf[40], af.getAudioData(), af.getAudioSize());
         // then do file ops and write to disk
+        
+		FILE* pF = fopen(filename, "wb");
+		if (!pF) { return af_result::failure; }
+
+		// get file size
+		size_t result = fwrite(&outBuf[0], sz, 1, pF);
+		if (result != sz) { return af_result::failure; }
+		// now that we have it in the buffer, close the file
+		fclose(pF);
+
+		return af_result::success;
     }
     
     // big four
@@ -184,7 +228,7 @@ public:
     ~AudioFile() = default;
     
     // accessors
-    SampleType** getAudioData() const
+    const uint8_t* getAudioData() const
     {
         return &mAudioData[0];
     }
@@ -235,5 +279,7 @@ private:
     Channels mChannelConfig;
     int32_t mSampleRate;
     uint16_t mBitsPerSample;
+	uint32_t mByteRate;
+	uint16_t mBlockAlign;
 };
 #endif
