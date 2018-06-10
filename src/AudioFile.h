@@ -154,11 +154,19 @@ public:
         assert(*wav_iter == fourccDATA);
         wav_iter++;
         // data subchunk size, 4 bytes, little
-        uint32_t audioDataSz = *wav_iter;
+        uint32_t audioDataBytes = (*wav_iter);
         wav_iter++;
         // audio data (deep copy to internal vector), subchunk sz bytes, little?
-        outFile.mAudioData.resize(audioDataSz);
-        memcpy(&outFile.mAudioData[0], wav_iter, audioDataSz);
+        
+        std::vector<int16_t> audioShorts(audioDataBytes / sizeof(int16_t));
+        outFile.mAudioData.resize(audioShorts.size());
+        memcpy(&audioShorts[0], wav_iter, audioDataBytes);
+        
+        for(int32_t i = 0; i < audioShorts.size(); i++)
+        {
+            outFile.mAudioData[i] = static_cast<float>(audioShorts[i]);
+        }
+        
         // clean up
         delete[] buffer;
         return af_result::success;
@@ -205,7 +213,15 @@ public:
 		// data subchunk size, 4 bytes, little
 		outBuf[10] = (af.getAudioSize());
 		// audio data (deep copy to internal vector), subchunk sz bytes, little?
-		memcpy(&outBuf[11], af.getAudioData(), af.getAudioSize());
+        
+        //go back to shorts
+        std::vector<int16_t> audioShorts(af.getAudioSize());
+        for(int32_t i = 0; i < af.mAudioData.size(); i++)
+        {
+            audioShorts[i] = static_cast<int16_t>(af.mAudioData[i]);
+        }
+        
+		memcpy(&outBuf[11], &audioShorts[0], audioShorts.size());
         // then do file ops and write to disk
         
 		FILE* pF = fopen(filename, "wb");
@@ -232,12 +248,12 @@ public:
     ~AudioFile() = default;
     
     // accessors
-    const uint8_t* getAudioData() const
+    float* getAudioData()
     {
-        return &mAudioData[0];
+        return (&mAudioData[0]);
     }
     
-    uint32_t getAudioSize() const
+    size_t getAudioSize() const
     {
         return mAudioData.size();
     }
@@ -279,7 +295,7 @@ public:
     
 private:
     //
-    std::vector<uint8_t> mAudioData;
+    std::vector<float> mAudioData;
     Channels mChannelConfig;
     int32_t mSampleRate;
     uint16_t mBitsPerSample;
