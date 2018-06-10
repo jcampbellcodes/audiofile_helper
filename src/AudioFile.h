@@ -173,42 +173,46 @@ public:
         
 		// how much space do we need???? eh???
 		const size_t sz = af.getAudioSize() + 40; // size of wave header
-		std::vector<uint8_t> outBuf(sz);
+		std::vector<uint32_t> outBuf(sz / sizeof(uint32_t));
 
 		// Time to parse the wave
 		// chunkid, 4 bytes, big "RIFF"
-		outBuf.push_back(fourccRIFF);
+        outBuf[0] = fourccRIFF;
 		// chunk size, 4 bytes, little
 		size_t chunksz = sz - 4; // size of file minus "RIFF literal"
-		outBuf.push_back(chunksz);
+		outBuf[1] = (chunksz);
 		// format, 4 bytes, big, "WAVE"
-		outBuf.push_back(fourccWAVE);
+		outBuf[2] = (fourccWAVE);
 		// fmt subchunk id, 4 bytes, big, "fmt "
-		outBuf.push_back(fourccFMT);
+		outBuf[3] = (fourccFMT);
 		// fmt subchunk size , 4 bytes, little. 16 for PCM
-		outBuf.push_back(16);
+		outBuf[4] = (16);
 		// fmt fmt, 2 bytes, little. PCM = 1, 2 bytes for channel config
-		outBuf.push_back((1 /*PCM*/) & static_cast<uint16_t>(af.getChannelConfig()));
+        uint16_t* fmtAndConfig = (uint16_t *)&outBuf[5];
+        *fmtAndConfig = uint16_t(1);
+        fmtAndConfig[1] = static_cast<uint16_t>(af.getChannelConfig());
 		// fmt sample rate, 4 bytes, little
-		outBuf.push_back(af.getSampleRate());
+		outBuf[6] = (af.getSampleRate());
 		// fmt byterate, 4 bytes, little
-		outBuf.push_back(af.mByteRate);
+		outBuf[7] = (af.mByteRate);
 		// fmt blockalign, 2 bytes, little --> we may start caring about this
 		// fmt bits per sample, 2 bytes, little
-		outBuf.push_back(af.mBlockAlign & af.mBitsPerSample);
+        uint16_t* smplData = (uint16_t *)&outBuf[8];
+        smplData[0] = af.mBlockAlign;
+        smplData[1] = af.mBitsPerSample;
 		// data subchunk, 4 bytes, big, little, "data"
-		outBuf.push_back(fourccDATA);
+		outBuf[9] = (fourccDATA);
 		// data subchunk size, 4 bytes, little
-		outBuf.push_back(af.getAudioSize());
+		outBuf[10] = (af.getAudioSize());
 		// audio data (deep copy to internal vector), subchunk sz bytes, little?
-		memcpy(&outBuf[40], af.getAudioData(), af.getAudioSize());
+		memcpy(&outBuf[11], af.getAudioData(), af.getAudioSize());
         // then do file ops and write to disk
         
 		FILE* pF = fopen(filename, "wb");
 		if (!pF) { return af_result::failure; }
 
 		// get file size
-		size_t result = fwrite(&outBuf[0], sz, 1, pF);
+		size_t result = fwrite(&outBuf[0], 1, sz, pF);
 		if (result != sz) { return af_result::failure; }
 		// now that we have it in the buffer, close the file
 		fclose(pF);
