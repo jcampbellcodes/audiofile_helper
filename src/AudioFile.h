@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include "af_helpers.h"
+#include <math.h>
 
 #define bigendian 1
 
@@ -22,69 +23,6 @@
 #define fourccFMT ' tmf'
 #define fourccWAVE 'EVAW'
 #endif
-
-
-/*
- 
- The canonical WAVE format starts with the RIFF header:
- 
- 0         4   ChunkID          Contains the letters "RIFF" in ASCII form
- (0x52494646 big-endian form).
- 
- 4         4   ChunkSize        36 + SubChunk2Size, or more precisely:
- 4 + (8 + SubChunk1Size) + (8 + SubChunk2Size)
- This is the size of the rest of the chunk
- following this number.  This is the size of the
- entire file in bytes minus 8 bytes for the
- two fields not included in this count:
- ChunkID and ChunkSize.
- 
- 8         4   Format           Contains the letters "WAVE"
- (0x57415645 big-endian form).
- 
- 
- 
- The "WAVE" format consists of two subchunks: "fmt " and "data":
- The "fmt " subchunk describes the sound data's format:
- 
- 12        4   Subchunk1ID      Contains the letters "fmt "
- (0x666d7420 big-endian form).
- 
- 16        4   Subchunk1Size    16 for PCM.  This is the size of the
- rest of the Subchunk which follows this number.
- 
- 20        2   AudioFormat      PCM = 1 (i.e. Linear quantization)
- Values other than 1 indicate some
- form of compression.
- 
- 22        2   NumChannels      Mono = 1, Stereo = 2, etc.
- 
- 24        4   SampleRate       8000, 44100, etc.
- 
- 28        4   ByteRate         == SampleRate * NumChannels * BitsPerSample/8
- 
- 32        2   BlockAlign       == NumChannels * BitsPerSample/8
- The number of bytes for one sample including
- all channels. I wonder what happens when
- this number isn't an integer?
- 
- 34        2   BitsPerSample    8 bits = 8, 16 bits = 16, etc.
- 
- The "data" subchunk contains the size of the data and the actual sound:
- 
- 36        4   Subchunk2ID      Contains the letters "data"
- (0x64617461 big-endian form).
- 
- 40        4   Subchunk2Size    == NumSamples * NumChannels * BitsPerSample/8
- This is the number of bytes in the data.
- You can also think of this as the size
- of the read of the subchunk following this
- number.
- 
- 44        *   Data             The actual sound data.
- 
- 
- */
 
 /// A handle to an audio file (WAV only)
 template <typename SampleType>
@@ -128,7 +66,7 @@ public:
         assert(*wav_iter == fourccFMT);
         wav_iter++;
         // fmt subchunk size , 4 bytes, little. 16 for PCM
-        assert(*wav_iter == 16); // Only support PCM wave data for now.
+        //assert(*wav_iter == 16); // Only support PCM wave data for now.
         wav_iter++;
         // fmt fmt, 2 bytes, little. PCM = 1
         uint16_t* frmatAndNumChans = (uint16_t *)&wav_iter[0];
@@ -149,7 +87,19 @@ public:
 		outFile.mBlockAlign = blockAlign;
         // fmt bits per sample, 2 bytes, little
         outFile.mBitsPerSample = *(((uint16_t *)&wav_iter[0]) + 1);
-        wav_iter++;
+        
+        int32_t deadMan = 0;
+        // now search for data, ignore all this parameter stuff from weird wavs
+        uint8_t* dataFinder = (uint8_t *)&wav_iter[0];
+        while(*(uint32_t *)(dataFinder) != fourccDATA)
+        {
+            if(deadMan++ > 32000)
+            {
+                return af_result::failure;
+            }
+            dataFinder++;
+        }
+        wav_iter = (uint32_t*)dataFinder;
         // data subchunk, 4 bytes, big, little, "data"
         assert(*wav_iter == fourccDATA);
         wav_iter++;
@@ -157,14 +107,25 @@ public:
         uint32_t audioDataBytes = (*wav_iter);
         wav_iter++;
         // audio data (deep copy to internal vector), subchunk sz bytes, little?
-        
         std::vector<int16_t> audioShorts(audioDataBytes / sizeof(int16_t));
-        outFile.mAudioData.resize(audioShorts.size());
         memcpy(&audioShorts[0], wav_iter, audioDataBytes);
         
-        for(int32_t i = 0; i < audioShorts.size(); i++)
+        int32_t samplesPerChannel = (audioDataBytes / sizeof(int16_t)) / numChans;
+        // make array of channels
+        for(int32_t i = 0; i < numChans; i++)
         {
-            outFile.mAudioData[i] = static_cast<float>(audioShorts[i]);
+            outFile.mAudioData.emplace_back( samplesPerChannel );
+        }
+        
+        SampleType M = pow(2.0, outFile.mBitsPerSample - 1);
+        for(int32_t channel = 0; channel < numChans; channel++)
+        {
+            //printf("\n\n\n\n ***********CHANNEL: %d*************\n\n\n\n", channel);
+            for(int32_t sample = channel; sample < samplesPerChannel; sample++)
+            {
+                //printf("\nChannel: %d, Sample: %d, (sample * numChans) - channel = %d\n", channel, sample, (sample * numChans) - channel);
+                outFile.mAudioData[channel][sample - channel] = static_cast<SampleType>( audioShorts[(sample * numChans) - channel] / M);
+            }
         }
         
         // clean up
@@ -180,8 +141,9 @@ public:
         // then add audio data at the end
         
 		// how much space do we need???? eh???
-		const size_t sz = af.getAudioSize() + 40; // size of wave header
-		std::vector<uint32_t> outBuf(sz / sizeof(uint32_t));
+        int16_t numChans = int16_t(af.getChannelConfig());
+		const size_t sz = ((af.getSamplesPerChannel() * numChans) * sizeof(int16_t)) + 40; // size of wave header
+		std::vector<uint32_t> outBuf(sz);
 
 		// Time to parse the wave
 		// chunkid, 4 bytes, big "RIFF"
@@ -198,7 +160,7 @@ public:
 		// fmt fmt, 2 bytes, little. PCM = 1, 2 bytes for channel config
         uint16_t* fmtAndConfig = (uint16_t *)&outBuf[5];
         *fmtAndConfig = uint16_t(1);
-        fmtAndConfig[1] = static_cast<uint16_t>(af.getChannelConfig());
+        fmtAndConfig[1] = numChans;
 		// fmt sample rate, 4 bytes, little
 		outBuf[6] = (af.getSampleRate());
 		// fmt byterate, 4 bytes, little
@@ -207,21 +169,42 @@ public:
 		// fmt bits per sample, 2 bytes, little
         uint16_t* smplData = (uint16_t *)&outBuf[8];
         smplData[0] = af.mBlockAlign;
-        smplData[1] = af.mBitsPerSample;
+        smplData[1] = 16;//af.mBitsPerSample;
 		// data subchunk, 4 bytes, big, little, "data"
 		outBuf[9] = (fourccDATA);
 		// data subchunk size, 4 bytes, little
-		outBuf[10] = (af.getAudioSize());
+        int32_t numSamples = af.getSamplesPerChannel() * numChans;
+		outBuf[10] = ((numSamples) * sizeof(float));
 		// audio data (deep copy to internal vector), subchunk sz bytes, little?
         
         //go back to shorts
-        std::vector<int16_t> audioShorts(af.getAudioSize());
-        for(int32_t i = 0; i < af.mAudioData.size(); i++)
+        std::vector<int16_t> audioShorts;
+        double M = pow(2, af.mBitsPerSample - 1);
+        float scaledSample = 0.0f;
+        
+        
+        // Re-interleave the samples
+        int32_t channel = 0;
+        for(int32_t sample = 0; sample < af.getSamplesPerChannel();)
         {
-            audioShorts[i] = static_cast<int16_t>(af.mAudioData[i]);
+            scaledSample = af.mAudioData[channel][sample] * M;
+            // clip if needed
+            if(scaledSample < -M) scaledSample = -M;
+            else if(scaledSample > M - 1) scaledSample = M - 1;
+            
+            
+            audioShorts.push_back(static_cast<int16_t>(scaledSample));
+            
+            // increment the loop
+            channel++;
+            if(channel == numChans)
+            {
+                channel = 0;
+                sample++;
+            }
         }
         
-		memcpy(&outBuf[11], &audioShorts[0], audioShorts.size());
+		memcpy(&outBuf[11], reinterpret_cast<uint8_t*>(&audioShorts[0]), audioShorts.size() * sizeof(int16_t));
         // then do file ops and write to disk
         
 		FILE* pF = fopen(filename, "wb");
@@ -248,14 +231,21 @@ public:
     ~AudioFile() = default;
     
     // accessors
-    float* getAudioData()
+    SampleType** getAudioData()
     {
-        return (&mAudioData[0]);
+        return reinterpret_cast<SampleType**>((&mAudioData[0]));
     }
     
-    size_t getAudioSize() const
+    size_t getSamplesPerChannel() const
     {
-        return mAudioData.size();
+        if(mAudioData.size())
+        {
+            return mAudioData[0].size();
+        }
+        else
+        {
+            return 0;
+        }
     }
     
     Channels getChannelConfig() const
@@ -293,9 +283,11 @@ public:
         return af_result::failure;
     }
     
+    std::vector<std::vector<SampleType>> mAudioData;
+    
 private:
     //
-    std::vector<float> mAudioData;
+    
     Channels mChannelConfig;
     int32_t mSampleRate;
     uint16_t mBitsPerSample;
