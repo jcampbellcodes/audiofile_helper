@@ -32,6 +32,7 @@ public:
     // io operations
     static af_result load(const char* path, AudioFile<SampleType>& outFile, af_sync_option async = af_sync_option::sync)
     {
+        outFile.mAudioData.clear();
         // Doing it the C way
         // open file
         uint32_t * buffer = nullptr;

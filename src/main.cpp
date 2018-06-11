@@ -16,18 +16,23 @@ int main()
     
     // get wave data and process it (modulate or something), save to disk
     // y(t) = in_sig * (A * sinf(2PI * frequency * timeval))
-    const int32_t channels = aud.getChannelConfig();
-    const int32_t samples = aud.getSamplesPerChannel();
-    for(int32_t channel = 0; channel < channels; channel++)
-    {
-        for(int32_t sample = 0; sample < samples; sample++)
-        {
-            aud.mAudioData[channel][sample] *= 0.5f * sinf(TWO_PI * 5.0 * (float(sample)/aud.getSampleRate()));
-        }
-    }
+    
+    float azimuth_deg = 0.0f;
+    
+    // pan!
 
-	// save that wave back to disk under a new name
-	res = AudioFile<float>::saveToDisk(aud, "/Users/JackCampbell/Git/audiofile_helper/resources/drums_written.wav");
+    for(int32_t sample = 0; sample < aud.getSamplesPerChannel(); sample++)
+    {
+        float azimuth_rad = azimuth_deg * 2.0f*M_PI / 360.0f;
+        float gainL = -sinf( azimuth_rad/2 - M_PI/4);
+        float gainR =  cosf( azimuth_rad/2 - M_PI/4);
+        aud.mAudioData[0][sample] *= gainL; //* sinf(TWO_PI * 25.0 * (float(sample)/aud.getSampleRate()));
+        aud.mAudioData[1][sample] *= gainR; //* sinf(TWO_PI * 25.0 * (float(sample)/aud.getSampleRate()));
+        azimuth_deg += 0.005f;
+    }
+    
+    // save that wave back to disk under a new name
+	res = AudioFile<float>::saveToDisk(aud, "/Users/JackCampbell/Git/audiofile_helper/resources/drums_panned.wav");
 	assert(res == af_result::success && "Wave file not written correctly :(");
     
     
@@ -38,8 +43,22 @@ int main()
 
     res = AudioFile<float>::load("/Users/JackCampbell/Git/audiofile_helper/resources/song.wav", aud);
     assert(res == af_result::success && "Wave file not loaded correctly :(");
+    const int32_t channels = aud.getChannelConfig();
+    const int32_t samples = aud.getSamplesPerChannel();
+    
+    for(int32_t channel = 0; channel < channels; channel++)
+    {
+        for(int32_t sample = 0; sample < samples; sample++)
+        {
+            aud.mAudioData[channel][sample] *= 0.8f * sinf(TWO_PI * 25.0 * (float(sample)/aud.getSampleRate()));
+        }
+    }
+    
+
+    
+    
     // save that wave back to disk under a new name
-    res = AudioFile<float>::saveToDisk(aud, "/Users/JackCampbell/Git/audiofile_helper/resources/song_written.wav");
+    res = AudioFile<float>::saveToDisk(aud, "/Users/JackCampbell/Git/audiofile_helper/resources/song_mod.wav");
     assert(res == af_result::success && "Wave file not written correctly :(");
     
     
