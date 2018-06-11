@@ -175,13 +175,13 @@ public:
 		outBuf[9] = (fourccDATA);
 		// data subchunk size, 4 bytes, little
         int32_t numSamples = af.getSamplesPerChannel() * numChans;
-		outBuf[10] = ((numSamples) * sizeof(float));
+		outBuf[10] = ((numSamples) * sizeof(SampleType));
 		// audio data (deep copy to internal vector), subchunk sz bytes, little?
         
         //go back to shorts
         std::vector<int16_t> audioShorts;
-        double M = pow(2, af.mBitsPerSample - 1);
-        float scaledSample = 0.0f;
+        SampleType M = pow(2, af.mBitsPerSample - 1);
+        SampleType scaledSample = 0.0f;
         
         
         // Re-interleave the samples
