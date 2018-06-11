@@ -22,7 +22,7 @@ int main()
     {
         for(int32_t sample = 0; sample < samples; sample++)
         {
-            aud.mAudioData[channel][sample] *= 0.5f * sinf(TWO_PI * 1000.0 * sample);
+            aud.mAudioData[channel][sample] *= 0.5f * sinf(TWO_PI * 5.0 * (float(sample)/aud.getSampleRate()));
         }
     }
 
