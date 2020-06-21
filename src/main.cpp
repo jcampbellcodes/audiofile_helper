@@ -39,8 +39,8 @@ int main()
     }
     
     // save that wave back to disk under a new name
-	res = AudioFile<double>::saveToDisk(aud, "/Users/JackCampbell/Git/audiofile_helper/resources/drums_panned.wav");
-	assert(res == af_result::success && "Wave file not written correctly :(");
+    res = AudioFile<double>::saveToDisk(aud, "/Users/JackCampbell/Git/audiofile_helper/resources/drums_panned.wav");
+    assert(res == af_result::success && "Wave file not written correctly :(");
     
     // load that wave again back into memory, assert data is equal to the first wave
     // create audio data in memory, construct an audiofile object with it, save to disk

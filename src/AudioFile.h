@@ -81,11 +81,11 @@ public:
         outFile.mSampleRate = *wav_iter;
         wav_iter++;
         // fmt byterate, 4 bytes, little
-		outFile.mByteRate = *wav_iter;
+        outFile.mByteRate = *wav_iter;
         wav_iter++;
         // fmt blockalign, 2 bytes, little --> we may start caring about this
         uint16_t blockAlign = *(uint16_t *)&wav_iter[0];
-		outFile.mBlockAlign = blockAlign;
+        outFile.mBlockAlign = blockAlign;
         // fmt bits per sample, 2 bytes, little
         outFile.mBitsPerSample = *(((uint16_t *)&wav_iter[0]) + 1);
         
@@ -141,42 +141,42 @@ public:
         // first, write all the metadata into a char buffer
         // then add audio data at the end
         
-		// how much space do we need???? eh???
+        // how much space do we need???? eh???
         int16_t numChans = int16_t(af.getChannelConfig());
-		const size_t sz = ((af.getSamplesPerChannel() * numChans) * sizeof(int16_t)) + 40; // size of wave header
-		std::vector<uint32_t> outBuf(sz);
+        const size_t sz = ((af.getSamplesPerChannel() * numChans) * sizeof(int16_t)) + 40; // size of wave header
+        std::vector<uint32_t> outBuf(sz);
 
-		// Time to parse the wave
-		// chunkid, 4 bytes, big "RIFF"
+        // Time to parse the wave
+        // chunkid, 4 bytes, big "RIFF"
         outBuf[0] = fourccRIFF;
-		// chunk size, 4 bytes, little
-		size_t chunksz = sz - 4; // size of file minus "RIFF literal"
-		outBuf[1] = (chunksz);
-		// format, 4 bytes, big, "WAVE"
-		outBuf[2] = (fourccWAVE);
-		// fmt subchunk id, 4 bytes, big, "fmt "
-		outBuf[3] = (fourccFMT);
-		// fmt subchunk size , 4 bytes, little. 16 for PCM
-		outBuf[4] = (16);
-		// fmt fmt, 2 bytes, little. PCM = 1, 2 bytes for channel config
+        // chunk size, 4 bytes, little
+        size_t chunksz = sz - 4; // size of file minus "RIFF literal"
+        outBuf[1] = (chunksz);
+        // format, 4 bytes, big, "WAVE"
+        outBuf[2] = (fourccWAVE);
+        // fmt subchunk id, 4 bytes, big, "fmt "
+        outBuf[3] = (fourccFMT);
+        // fmt subchunk size , 4 bytes, little. 16 for PCM
+        outBuf[4] = (16);
+        // fmt fmt, 2 bytes, little. PCM = 1, 2 bytes for channel config
         uint16_t* fmtAndConfig = (uint16_t *)&outBuf[5];
         *fmtAndConfig = uint16_t(1);
         fmtAndConfig[1] = numChans;
-		// fmt sample rate, 4 bytes, little
-		outBuf[6] = (af.getSampleRate());
-		// fmt byterate, 4 bytes, little
-		outBuf[7] = (af.mByteRate);
-		// fmt blockalign, 2 bytes, little --> we may start caring about this
-		// fmt bits per sample, 2 bytes, little
+        // fmt sample rate, 4 bytes, little
+        outBuf[6] = (af.getSampleRate());
+        // fmt byterate, 4 bytes, little
+        outBuf[7] = (af.mByteRate);
+        // fmt blockalign, 2 bytes, little --> we may start caring about this
+        // fmt bits per sample, 2 bytes, little
         uint16_t* smplData = (uint16_t *)&outBuf[8];
         smplData[0] = af.mBlockAlign;
         smplData[1] = 16;//af.mBitsPerSample;
-		// data subchunk, 4 bytes, big, little, "data"
-		outBuf[9] = (fourccDATA);
-		// data subchunk size, 4 bytes, little
+        // data subchunk, 4 bytes, big, little, "data"
+        outBuf[9] = (fourccDATA);
+        // data subchunk size, 4 bytes, little
         int32_t numSamples = af.getSamplesPerChannel() * numChans;
-		outBuf[10] = ((numSamples) * sizeof(SampleType));
-		// audio data (deep copy to internal vector), subchunk sz bytes, little?
+        outBuf[10] = ((numSamples) * sizeof(SampleType));
+        // audio data (deep copy to internal vector), subchunk sz bytes, little?
         
         //go back to shorts
         std::vector<int16_t> audioShorts;
@@ -205,19 +205,19 @@ public:
             }
         }
         
-		memcpy(&outBuf[11], reinterpret_cast<uint8_t*>(&audioShorts[0]), audioShorts.size() * sizeof(int16_t));
+        memcpy(&outBuf[11], reinterpret_cast<uint8_t*>(&audioShorts[0]), audioShorts.size() * sizeof(int16_t));
         // then do file ops and write to disk
         
-		FILE* pF = fopen(filename, "wb");
-		if (!pF) { return af_result::failure; }
+        FILE* pF = fopen(filename, "wb");
+        if (!pF) { return af_result::failure; }
 
-		// get file size
-		size_t result = fwrite(&outBuf[0], 1, sz, pF);
-		if (result != sz) { return af_result::failure; }
-		// now that we have it in the buffer, close the file
-		fclose(pF);
+        // get file size
+        size_t result = fwrite(&outBuf[0], 1, sz, pF);
+        if (result != sz) { return af_result::failure; }
+        // now that we have it in the buffer, close the file
+        fclose(pF);
 
-		return af_result::success;
+        return af_result::success;
     }
     
     // big four
@@ -292,7 +292,7 @@ private:
     Channels mChannelConfig;
     int32_t mSampleRate;
     uint16_t mBitsPerSample;
-	uint32_t mByteRate;
-	uint16_t mBlockAlign;
+    uint32_t mByteRate;
+    uint16_t mBlockAlign;
 };
 #endif
